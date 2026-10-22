@@ -131,4 +131,32 @@ contract StakingAppFuzz is Test {
         assertEq(stakingApp.balances(user1), stakeAmount_ - withdrawAmount_);
         assertEq(token.balanceOf(user1), withdrawAmount_);
     }
+
+    // Any out-of-bounds duration must revert and leave the stored value untouched.
+    function testFuzz_setRewardsDuration_outOfBounds_reverts(uint256 duration_) public {
+        vm.assume(duration_ < stakingApp.MIN_REWARDS_DURATION() || duration_ > stakingApp.MAX_REWARDS_DURATION());
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(InvalidRewardsDuration.selector, duration_));
+        stakingApp.setRewardsDuration(duration_);
+        assertEq(stakingApp.rewardsDuration(), rewardsDuration_);
+    }
+
+    // The reward rate always equals reward / duration and the period always ends duration seconds later.
+    function testFuzz_notifyRewardAmount_setsExpectedRate(uint96 reward_) public {
+        reward_ = uint96(bound(reward_, rewardsDuration_, 1_000_000 ether));
+        vm.deal(owner, reward_);
+        vm.prank(owner);
+        stakingApp.notifyRewardAmount{value: reward_}(reward_);
+        assertEq(stakingApp.rewardRate(), uint256(reward_) / rewardsDuration_);
+        assertEq(stakingApp.periodFinish(), block.timestamp + rewardsDuration_);
+    }
+
+    // Any msg.value different from the declared reward must revert.
+    function testFuzz_notifyRewardAmount_withMismatchedValue_reverts(uint96 reward_, uint96 sent_) public {
+        vm.assume(reward_ != sent_);
+        vm.deal(owner, sent_);
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IncorrectRewardValue.selector, uint256(reward_), uint256(sent_)));
+        stakingApp.notifyRewardAmount{value: sent_}(reward_);
+    }
 }
