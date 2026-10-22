@@ -61,6 +61,6 @@ Five suites in `test/` (shared setup in `test/utils/StakingBase.sol`):
 | `StakingAppValidation.t.sol` | Unit | Constructor and duration bounds, reward rate checks, ETH payment failures, exit branches, pause scope |
 | `StakingTokenTest.t.sol` | Unit | Mint, distribute, cap, access control |
 | `StakingAppFuzz.t.sol` | Fuzz | 256 runs; stake bounds, reward proportionality, monotonicity, withdrawal limits |
-| `StakingAppInvariant.t.sol` | Invariant | Handler drives 5 stakers; 256 sequences × 128k calls; token solvency, ETH solvency, monotonic `rewardPerToken`, `totalSupply` consistency |
+| `StakingAppInvariant.t.sol` | Invariant | Handler drives 5 stakers; 256 sequences × 32k calls (depth 128); token solvency, ETH solvency, monotonic `rewardPerToken`, `totalSupply` consistency |
 
 The invariant handler (`StakingAppHandler`) is in the same file as the invariant test and is the only part of the test suite that uses `vm.deal` + `vm.prank` together to simulate owner funding.
