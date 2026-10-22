@@ -3,10 +3,10 @@
 A continuous proportional ERC20 staking protocol on Ethereum. Users stake any amount above a configurable minimum and earn ETH rewards that accrue second by second, proportional to their share of the total staked supply. The model follows the Synthetix StakingRewards pattern with ETH as the reward token.
 
 ![CI](https://github.com/sergiiogg7/staking-continuous-rewards-protocol/actions/workflows/test.yml/badge.svg)
-![Solidity ^0.8.24](https://img.shields.io/badge/Solidity-%5E0.8.24-blue)
+![Solidity 0.8.24](https://img.shields.io/badge/Solidity-0.8.24-blue)
 ![Foundry](https://img.shields.io/badge/built%20with-Foundry-FF6B6B)
-![Tests](https://img.shields.io/badge/tests-53%20passing-green)
-![License: UNLICENSED](https://img.shields.io/badge/license-UNLICENSED-lightgrey)
+![Tests](https://img.shields.io/badge/tests-77%20passing-green)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
 ---
 
@@ -137,11 +137,28 @@ The reentrancy test includes a purpose-built `ReentrantAttacker` contract that a
 | Suite | Type | Coverage |
 |---|---|---|
 | `StakingAppTest.t.sol` | Unit — happy path, reverts, access control, pause, reentrancy | `StakingApp`: 100% lines |
+| `StakingAppValidationTest` (`StakingAppValidation.t.sol`) | Unit — constructor and duration bounds, reward rate checks, ETH payment failures, exit branches, pause scope | `StakingApp`: 100% lines and branches |
 | `StakingTokenTest.t.sol` | Unit — mint, distribute, access control | `StakingToken`: 100% lines |
-| `StakingAppFuzz.t.sol` | Fuzz — stake bounds, reward proportionality, monotonicity, withdrawal limits | 256 runs per test |
-| `StakingAppInvariant.t.sol` | Invariant — token solvency, ETH solvency, rewardPerToken monotonicity, totalSupply consistency | 256 sequences · 128,000 calls |
+| `StakingAppFuzz.t.sol` | Fuzz — stake bounds, reward proportionality, monotonicity, withdrawal limits, duration bounds, reward rate | 256 runs per test (5,000 in CI) |
+| `StakingAppInvariant.t.sol` | Invariant — token solvency, ETH solvency, rewardPerToken monotonicity, totalSupply consistency | 256 sequences · depth 128 |
 
-CI runs `forge fmt --check`, `forge build`, `forge test`, `forge snapshot --check` and Slither static analysis on every push.
+CI runs `forge fmt --check`, `forge build --sizes`, `forge test` (profile `ci`, higher fuzz runs), a 95% line-coverage gate on `src/`, `forge snapshot --check` and Slither on every push.
+
+## Security
+
+| Measure | Location |
+|---|---|
+| Two-step ownership transfer | `Ownable2Step` |
+| Reentrancy guard on every state-changing user function | `nonReentrant` |
+| CEI: state cleared before ETH and token transfers | `withdraw`, `claimRewards`, `exit` |
+| Exit path never paused | `withdraw`, `exit` have no `whenNotPaused` |
+| `msg.value` must equal the declared reward | `notifyRewardAmount` (`IncorrectRewardValue`) |
+| Rewards that would round the rate to zero are rejected | `notifyRewardAmount` (`RewardRateTooLow`) |
+| Rewards duration bounded to 1 to 365 days | constructor, `setRewardsDuration` |
+| Custom errors only | `StakingApp.sol` |
+| Slither in CI | `slither.config.json` |
+
+See [SECURITY.md](SECURITY.md) for assumptions and known limits.
 
 **Gas (median, production functions):**
 
@@ -154,7 +171,7 @@ CI runs `forge fmt --check`, `forge build`, `forge test`, `forge snapshot --chec
 
 ## Tech Stack
 
-- **Solidity** `^0.8.24` — compiled with `solc 0.8.35`
+- **Solidity** `0.8.24`
 - **Foundry** `1.7.1` — Forge, Anvil, Cast
 - **OpenZeppelin Contracts** `v5.7.0` — ERC20, SafeERC20, Ownable2Step, ReentrancyGuard, Pausable
 - **forge-std** `v1.17.0`
@@ -197,10 +214,12 @@ script/
   Deploy.s.sol          # Reproducible deployment script
 test/
   StakingAppTest.t.sol  # Unit tests
+  StakingAppValidation.t.sol  # Validation, payment failures, pause scope
   StakingTokenTest.t.sol
+  utils/StakingBase.sol  # Shared setup and non-payable staker mock
   StakingAppFuzz.t.sol  # Fuzz tests
   StakingAppInvariant.t.sol  # Invariant tests with handler
 .github/workflows/
-  test.yml              # CI: fmt · build · test · gas snapshot · Slither
+  test.yml              # CI: fmt · build · test · coverage · gas snapshot · Slither
 .env.example            # Deployment configuration template
 ```

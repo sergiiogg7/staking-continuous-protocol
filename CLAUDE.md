@@ -22,7 +22,7 @@ source .env
 forge script script/Deploy.s.sol --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast
 ```
 
-CI runs: `forge fmt --check` → `forge build --sizes` → `forge test -vvv` → `forge snapshot --check` → Slither (`--exclude-dependencies`).
+CI runs: `forge fmt --check` → `forge build --sizes` → `forge test` (profile `ci`) → 95% line-coverage gate on `src/` (`forge coverage --no-match-coverage "script|test"`) → `forge snapshot --check` → Slither (`slither.config.json`).
 
 ## Architecture
 
@@ -47,15 +47,18 @@ earned(user) = balance[user] × (rewardPerToken − userRewardPerTokenPaid[user]
 
 - **CEI everywhere**: `withdraw`, `claimRewards`, and `exit` zero out state before any external call.
 - **Pause scope**: `stake` and `claimRewards` are `whenNotPaused`; `withdraw` is intentionally unrestricted.
-- `msg.value == reward_` enforced in `notifyRewardAmount` to prevent ETH accounting drift.
+- `msg.value == reward_` enforced in `notifyRewardAmount` (`IncorrectRewardValue`) to prevent ETH accounting drift. Rewards that round the rate to zero revert with `RewardRateTooLow`.
+- Rewards duration is bounded to `MIN_REWARDS_DURATION` (1 day) .. `MAX_REWARDS_DURATION` (365 days) in the constructor and `setRewardsDuration`.
+- Rewards accrued while `totalSupply == 0` are not distributed (Synthetix behaviour); see `SECURITY.md`.
 
 ## Tests
 
-Four suites in `test/`:
+Five suites in `test/` (shared setup in `test/utils/StakingBase.sol`):
 
 | File | Type | Notes |
 |---|---|---|
 | `StakingAppTest.t.sol` | Unit | Happy path, reverts, access control, pause, reentrancy attacker |
+| `StakingAppValidation.t.sol` | Unit | Constructor and duration bounds, reward rate checks, ETH payment failures, exit branches, pause scope |
 | `StakingTokenTest.t.sol` | Unit | Mint, distribute, cap, access control |
 | `StakingAppFuzz.t.sol` | Fuzz | 256 runs; stake bounds, reward proportionality, monotonicity, withdrawal limits |
 | `StakingAppInvariant.t.sol` | Invariant | Handler drives 5 stakers; 256 sequences × 128k calls; token solvency, ETH solvency, monotonic `rewardPerToken`, `totalSupply` consistency |
