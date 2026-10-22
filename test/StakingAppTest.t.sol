@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.24;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.24;
 
 import "forge-std/Test.sol";
 import "../src/StakingApp.sol";
@@ -223,8 +223,7 @@ contract StakingAppTest is Test {
         attacker.claim();
 
         assertEq(
-            attacker.lastRevertReason(),
-            abi.encodeWithSelector(ReentrancyGuard.ReentrancyGuardReentrantCall.selector)
+            attacker.lastRevertReason(), abi.encodeWithSelector(ReentrancyGuard.ReentrancyGuardReentrantCall.selector)
         );
     }
 
@@ -288,7 +287,7 @@ contract StakingAppTest is Test {
 
     function test_notifyRewardAmount_valueMismatch_reverts() public {
         vm.deal(owner, 2 ether);
-        vm.expectRevert("msg.value != reward_");
+        vm.expectRevert(abi.encodeWithSelector(IncorrectRewardValue.selector, 1 ether, 2 ether));
         vm.prank(owner);
         stakingApp.notifyRewardAmount{value: 2 ether}(1 ether);
     }
@@ -459,7 +458,8 @@ contract ReentrantAttacker {
     }
 
     receive() external payable {
-        try stakingApp.claimRewards() {} catch (bytes memory reason) {
+        try stakingApp.claimRewards() {}
+        catch (bytes memory reason) {
             lastRevertReason = reason;
         }
     }

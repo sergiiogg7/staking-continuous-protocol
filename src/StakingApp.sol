@@ -1,11 +1,11 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.24;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.24;
 
-import "../lib/openzeppelin-contracts/contracts/access/Ownable2Step.sol";
-import "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-import "../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
-import "../lib/openzeppelin-contracts/contracts/utils/Pausable.sol";
-import "../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/access/Ownable2Step.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @notice Thrown when a stake amount is below the required minimum.
 /// @param minimum The minimum stake amount.
@@ -29,6 +29,22 @@ error ZeroAmount();
 /// @notice Thrown when the ETH transfer to the staker fails.
 error EthTransferFailed();
 
+/// @notice Thrown when a required address argument is the zero address.
+error ZeroAddress();
+
+/// @notice Thrown when a rewards duration falls outside the allowed bounds.
+/// @param provided The rejected duration in seconds.
+error InvalidRewardsDuration(uint256 provided);
+
+/// @notice Thrown when the ETH sent to `notifyRewardAmount` does not equal the declared reward.
+/// @param expected The declared reward amount.
+/// @param provided The ETH amount sent with the call.
+error IncorrectRewardValue(uint256 expected, uint256 provided);
+
+/// @notice Thrown when the reward is too small to produce a non-zero reward rate.
+/// @param reward The rejected reward amount.
+error RewardRateTooLow(uint256 reward);
+
 /// @title StakingApp
 /// @notice Continuous proportional ERC20 staking contract that rewards stakers with ETH.
 /// @dev Implements the Synthetix StakingRewards model with ETH as the reward token.
@@ -36,6 +52,12 @@ error EthTransferFailed();
 ///      Inherits Ownable2Step, ReentrancyGuard, and Pausable from OpenZeppelin v5.
 contract StakingApp is Ownable2Step, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
+
+    /// @notice Shortest rewards duration the owner may configure, in seconds.
+    uint256 public constant MIN_REWARDS_DURATION = 1 days;
+
+    /// @notice Longest rewards duration the owner may configure, in seconds.
+    uint256 public constant MAX_REWARDS_DURATION = 365 days;
 
     /// @notice The ERC20 token accepted for staking.
     IERC20 public immutable stakingToken;
@@ -105,6 +127,9 @@ contract StakingApp is Ownable2Step, ReentrancyGuard, Pausable {
     constructor(address stakingToken_, address owner_, uint256 minStakingAmount_, uint256 rewardsDuration_)
         Ownable(owner_)
     {
+        if (stakingToken_ == address(0)) revert ZeroAddress();
+        _validateRewardsDuration(rewardsDuration_);
+
         stakingToken = IERC20(stakingToken_);
         minStakingAmount = minStakingAmount_;
         rewardsDuration = rewardsDuration_;
@@ -132,22 +157,25 @@ contract StakingApp is Ownable2Step, ReentrancyGuard, Pausable {
     }
 
     /// @notice Returns the effective timestamp for reward accrual (capped at period end).
+    /// @return Current timestamp, or `periodFinish` once the period has ended.
     function lastTimeRewardApplicable() public view returns (uint256) {
         return block.timestamp < periodFinish ? block.timestamp : periodFinish;
     }
 
     /// @notice Returns the cumulative ETH earned per token staked, scaled by 1e18.
+    /// @return Reward index including rewards accrued since the last update.
     function rewardPerToken() public view returns (uint256) {
         if (totalSupply == 0) return rewardPerTokenStored;
-        return rewardPerTokenStored
-            + (rewardRate * (lastTimeRewardApplicable() - lastUpdateTime) * 1e18) / totalSupply;
+        return rewardPerTokenStored + (rewardRate * (lastTimeRewardApplicable() - lastUpdateTime) * 1e18) / totalSupply;
     }
 
     /// @notice Returns the total accrued but unclaimed ETH rewards for `account_`.
     /// @param account_ The address to query.
+    /// @return Accrued ETH rewards in wei.
     function earned(address account_) public view returns (uint256) {
-        return (balances[account_] * (rewardPerToken() - userRewardPerTokenPaid[account_])) / 1e18
-            + pendingRewards[account_];
+        return
+            (balances[account_] * (rewardPerToken() - userRewardPerTokenPaid[account_])) / 1e18
+                + pendingRewards[account_];
     }
 
     /// @notice Stakes `amount_` tokens into the contract.
@@ -218,14 +246,17 @@ contract StakingApp is Ownable2Step, ReentrancyGuard, Pausable {
     ///      `msg.value` must equal `reward_` to prevent accounting drift.
     /// @param reward_ ETH amount to distribute over `rewardsDuration` seconds.
     function notifyRewardAmount(uint256 reward_) external payable onlyOwner updateReward(address(0)) {
-        require(msg.value == reward_, "msg.value != reward_");
+        if (msg.value != reward_) revert IncorrectRewardValue(reward_, msg.value);
 
+        uint256 newRate;
         if (block.timestamp < periodFinish) {
             uint256 leftover = (periodFinish - block.timestamp) * rewardRate;
-            rewardRate = (reward_ + leftover) / rewardsDuration;
+            newRate = (reward_ + leftover) / rewardsDuration;
         } else {
-            rewardRate = reward_ / rewardsDuration;
+            newRate = reward_ / rewardsDuration;
         }
+        if (newRate == 0) revert RewardRateTooLow(reward_);
+        rewardRate = newRate;
 
         lastUpdateTime = block.timestamp;
         periodFinish = block.timestamp + rewardsDuration;
@@ -243,10 +274,19 @@ contract StakingApp is Ownable2Step, ReentrancyGuard, Pausable {
     /// @notice Updates the rewards period duration.
     /// @dev Can only be called after the current reward period has ended to avoid
     ///      breaking the in-flight rate calculation.
+    ///      Reverts with {InvalidRewardsDuration} outside [`MIN_REWARDS_DURATION`, `MAX_REWARDS_DURATION`].
     /// @param duration_ New duration in seconds.
     function setRewardsDuration(uint256 duration_) external onlyOwner {
         if (block.timestamp < periodFinish) revert RewardsDurationNotFinished();
+        _validateRewardsDuration(duration_);
         rewardsDuration = duration_;
         emit RewardsDurationChanged(duration_);
+    }
+
+    /// @dev Reverts if `duration_` is outside the allowed bounds.
+    function _validateRewardsDuration(uint256 duration_) private pure {
+        if (duration_ < MIN_REWARDS_DURATION || duration_ > MAX_REWARDS_DURATION) {
+            revert InvalidRewardsDuration(duration_);
+        }
     }
 }

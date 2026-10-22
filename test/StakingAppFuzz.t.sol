@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.24;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.24;
 
 import "forge-std/Test.sol";
 import "../src/StakingApp.sol";
@@ -108,9 +108,9 @@ contract StakingAppFuzz is Test {
         assertLe(totalEarned, funded + 1); // +1 for rounding
     }
 
-    // Any rewardsDuration > 0 is stored correctly after period ends
+    // Any in-bounds rewardsDuration is stored correctly after period ends
     function testFuzz_setRewardsDuration_stores(uint256 duration_) public {
-        vm.assume(duration_ > 0);
+        duration_ = bound(duration_, stakingApp.MIN_REWARDS_DURATION(), stakingApp.MAX_REWARDS_DURATION());
         vm.prank(owner);
         stakingApp.setRewardsDuration(duration_);
         assertEq(stakingApp.rewardsDuration(), duration_);
