@@ -4,5 +4,8 @@
       "name": "v1.17.0",
       "rev": "f3dae6e6ee381f25eb6a246f7da9b85c91a68219"
     }
+  },
+  "lib/openzeppelin-contracts": {
+    "rev": "b04d141ba4fec9b0f970ce4c7746b0a02e50000b"
   }
 }
