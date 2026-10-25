@@ -53,7 +53,7 @@ earned(user) = balance[user] × (rewardPerToken − userRewardPerTokenPaid[user]
 
 ## Tests
 
-Five suites in `test/` (shared setup in `test/utils/StakingBase.sol`):
+Five suites in `test/` (shared setup in `test/utils/StakingBase.sol`, mocks in `test/mocks/`):
 
 | File | Type | Notes |
 |---|---|---|

@@ -2,7 +2,8 @@
 pragma solidity 0.8.24;
 
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
-import {StakingBase, NoReceiveStaker} from "./utils/StakingBase.sol";
+import {StakingBase} from "./utils/StakingBase.sol";
+import {NoReceiveStaker} from "./mocks/NoReceiveStaker.sol";
 import "../src/StakingApp.sol";
 
 contract StakingAppValidationTest is StakingBase {

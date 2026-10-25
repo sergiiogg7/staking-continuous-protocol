@@ -216,7 +216,8 @@ test/
   StakingAppTest.t.sol  # Unit tests
   StakingAppValidation.t.sol  # Validation, payment failures, pause scope
   StakingTokenTest.t.sol
-  utils/StakingBase.sol  # Shared setup and non-payable staker mock
+  utils/StakingBase.sol  # Shared setup
+  mocks/NoReceiveStaker.sol  # Non-payable staker mock
   StakingAppFuzz.t.sol  # Fuzz tests
   StakingAppInvariant.t.sol  # Invariant tests with handler
 .github/workflows/
